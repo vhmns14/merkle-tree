@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>merkle tree — interactive</title>
+<style>
+  :root{
+    --bg:#14161b; --panel:#1b1e25; --line:#2a2e38; --fg:#d7dae0;
+    --dim:#7c8290; --accent:#5fd0a8; --warn:#e0a35f; --proof:#7aa2f7;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; background:var(--bg); color:var(--fg); font-family:var(--mono); font-size:14px; line-height:1.5}
+  a{color:var(--proof)}
+  .wrap{max-width:1080px; margin:0 auto; padding:26px 20px 60px}
+  h1{font-size:19px; font-weight:600; margin:0 0 2px; letter-spacing:-.2px}
+  h1 .v{color:var(--dim); font-weight:400; font-size:13px}
+  .sub{color:var(--dim); font-size:13px; margin:0 0 22px; max-width:640px}
+  .sub code{background:#000; padding:1px 5px; border-radius:3px; color:var(--accent)}
+  .cols{display:grid; grid-template-columns:280px 1fr; gap:20px; align-items:start}
+  @media(max-width:820px){ .cols{grid-template-columns:1fr} }
+  .panel{background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:14px}
+  .panel h2{font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--dim); margin:0 0 10px; font-weight:600}
+  .leaf-row{display:flex; gap:6px; margin-bottom:6px; align-items:center}
+  .leaf-row .ix{color:var(--dim); width:20px; text-align:right; font-size:12px; flex:none}
+  .leaf-row input{flex:1; min-width:0; background:#0e1015; border:1px solid var(--line); color:var(--fg); border-radius:5px; padding:6px 8px; font-family:var(--mono); font-size:13px}
+  .leaf-row input:focus{outline:none; border-color:var(--accent)}
+  .leaf-row button{flex:none; width:28px; background:none; border:1px solid var(--line); color:var(--dim); border-radius:5px; cursor:pointer; font-family:var(--mono); padding:5px 0}
+  .leaf-row button:hover{border-color:var(--warn); color:var(--warn)}
+  .row-btns{display:flex; gap:8px; margin-top:10px}
+  .btn{background:#0e1015; border:1px solid var(--line); color:var(--fg); cursor:pointer; border-radius:5px; padding:7px 11px; font-family:var(--mono); font-size:13px}
+  .btn:hover{border-color:var(--accent)}
+  .btn:disabled{opacity:.4; cursor:not-allowed}
+  .btn.full{flex:1}
+  .meta{margin-top:14px; padding-top:12px; border-top:1px solid var(--line); color:var(--dim); font-size:12px}
+  .meta b{color:var(--fg); font-weight:600}
+  .root{margin-top:8px; word-break:break-all; color:var(--accent); font-size:12px}
+  .stage{position:relative; overflow-x:auto; background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:10px; min-height:280px}
+  .stage svg{position:absolute; left:0; top:0; pointer-events:none}
+  .node{position:absolute; transform:translate(-50%,-50%); width:90px; padding:6px; border-radius:6px; text-align:center; background:#0e1015; border:1px solid var(--line); user-select:none; transition:opacity .15s, border-color .15s}
+  .node .tag{font-size:10px; color:var(--dim); display:block; margin-bottom:2px}
+  .node .hx{font-size:11px; color:var(--fg); letter-spacing:.3px}
+  .node.leaf{cursor:pointer}
+  .node.leaf:hover{border-color:var(--accent)}
+  .node.root{border-color:var(--accent)}
+  .node.root .hx{color:var(--accent)}
+  .node.dup{opacity:.5; border-style:dashed}
+  .dimmed .node{opacity:.25}
+  .node.on-path{opacity:1 !important; border-color:var(--accent)}
+  .node.on-proof{opacity:1 !important; border-color:var(--proof)}
+  .node.on-proof .hx{color:var(--proof)}
+  .node.sel{opacity:1 !important; box-shadow:0 0 0 2px var(--accent)}
+  .proof{margin-top:18px}
+  .proof .pnl-head{display:flex; justify-content:space-between; align-items:center; margin-bottom:8px}
+  .proof .close{cursor:pointer; color:var(--dim); border:none; background:none; font-family:var(--mono); font-size:13px}
+  .proof .close:hover{color:var(--warn)}
+  .hint{color:var(--dim); font-size:12px; margin:0 0 12px}
+  .step{display:flex; gap:10px; padding:6px 0; border-bottom:1px dashed var(--line); font-size:12px; align-items:baseline}
+  .step:last-child{border:none}
+  .step .n{color:var(--dim); flex:none; width:84px}
+  .step .h{word-break:break-all}
+  .step .side{color:var(--proof)}
+  .verdict{margin-top:12px; padding:9px 12px; border-radius:6px; font-size:13px; word-break:break-all}
+  .verdict.ok{background:#16271f; border:1px solid var(--accent); color:var(--accent)}
+  .foot{margin-top:30px; color:var(--dim); font-size:12px}
+  .foot a{text-decoration:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>merkle tree <span class="v">· sha-256, live</span></h1>
+  <p class="sub">
+    Edit the blocks and the tree re-hashes itself. Click a leaf to get its
+    <code>merkle proof</code> — the sibling hashes that prove it belongs under the root,
+    without needing the whole tree.
+  </p>
+
+  <div class="cols">
+    <div class="panel">
+      <h2>data blocks</h2>
+      <div id="leaves"></div>
+      <div class="row-btns">
+        <button class="btn full" id="add">+ add block</button>
+        <button class="btn" id="rand" title="randomise">⟳</button>
+      </div>
+      <div class="meta">
+        <div><b id="nLeaves">0</b> leaves · <b id="nLevels">0</b> levels</div>
+        <div style="margin-top:6px">root:</div>
+        <div class="root" id="rootHash">—</div>
+      </div>
+    </div>
+
+    <div>
+      <div class="stage" id="stage"></div>
+      <div class="panel proof" id="proofPanel" style="display:none">
+        <div class="pnl-head">
+          <h2 style="margin:0">merkle proof · block #<span id="proofIdx">0</span></h2>
+          <button class="close" id="proofClose">close ✕</button>
+        </div>
+        <p class="hint">
+          To prove a block is in the tree you only need these sibling hashes. Hash upward
+          step by step — if you land on the same root, the block is verified.
+        </p>
+        <div id="proofSteps"></div>
+        <div id="verdict"></div>
+      </div>
+    </div>
+  </div>
+
+  <p class="foot">built by <a href="https://github.com/vhmns14">@vhmns14</a> · real sha-256 via crypto.subtle, no libraries</p>
+</div>
+
+<script>
+"use strict";
+
+/* --- hashing -------------------------------------------------------------
+   real sha-256 from the browser. crypto.subtle is async, so the whole
+   build is async too. this is a teaching tree, not bitcoin-exact: bitcoin
+   does double-sha256 over raw bytes; here i sha256 the two child hex
+   strings concatenated. same shape, easier to read. */
+const enc = new TextEncoder();
+async function sha256(str){
+  const buf = await crypto.subtle.digest("SHA-256", enc.encode(str));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2,"0")).join("");
+}
+const combine = (a,b) => sha256(a + b);
+const short = h => h ? h.slice(0,8) : "—";
+
+/* --- state ---------------------------------------------------------------- */
+let blocks = ["alice→bob: 5", "bob→carol: 2", "carol→dave: 9", "dave→alice: 1"];
+let levels = [];        // levels[0] = leaf hashes, last = [root]
+let dupFlags = [];      // per level: which indices are duplicated (odd-count padding)
+let selected = null;    // selected leaf index for proof view
+
+const $ = id => document.getElementById(id);
+
+/* --- build the tree ------------------------------------------------------- */
+async function build(){
+  // level 0: hash each data block
+  const leafHashes = await Promise.all(blocks.map(sha256));
+  levels = [leafHashes];
+  dupFlags = [leafHashes.map(()=>false)];
+
+  // fold upward until one node remains
+  let cur = leafHashes;
+  while(cur.length > 1){
+    const next = [], dup = [];
+    for(let i=0; i<cur.length; i+=2){
+      const left = cur[i];
+      // odd one out: bitcoin duplicates the last node and hashes it with itself
+      const hasRight = i+1 < cur.length;
+      const right = hasRight ? cur[i+1] : cur[i];
+      next.push(await combine(left, right));
+      dup.push(false);
+      // mark the padded node on the *current* level so we can show it dashed
+      if(!hasRight) dupFlags[dupFlags.length-1].push(true);
+    }
+    levels.push(next);
+    dupFlags.push(dup);
+    cur = next;
+  }
+  render();
+}
+
+/* --- left-side block editor ----------------------------------------------- */
+function renderLeaves(){
+  const box = $("leaves");
+  box.innerHTML = "";
+  blocks.forEach((val, i) => {
+    const row = document.createElement("div");
+    row.className = "leaf-row";
+    row.innerHTML =
+      `<span class="ix">${i}</span>` +
+      `<input value="${val.replace(/"/g,"&quot;")}" data-i="${i}">` +
+      `<button data-del="${i}" title="remove">✕</button>`;
+    box.appendChild(row);
+  });
+  // keep delete disabled when only one block left — a tree needs a leaf
+  box.querySelectorAll("[data-del]").forEach(b =>
+    b.disabled = blocks.length <= 1);
+
+  box.querySelectorAll("input").forEach(inp => {
+    inp.addEventListener("input", e => {
+      blocks[+e.target.dataset.i] = e.target.value;
+      selected = null; closeProof();
+      build();
+    });
+  });
+  box.querySelectorAll("[data-del]").forEach(b => {
+    b.addEventListener("click", e => {
+      blocks.splice(+e.target.dataset.del, 1);
+      selected = null; closeProof();
+      build();
+    });
+  });
+}
+
+/* --- draw the tree -------------------------------------------------------- */
+function render(){
+  renderLeaves();
+  $("nLeaves").textContent = levels[0].length;
+  $("nLevels").textContent = levels.length;
+  $("rootHash").textContent = levels[levels.length-1][0];
+
+  const stage = $("stage");
+  stage.innerHTML = "";
+
+  const NODE_W = 90, GAP_X = 22, ROW_H = 78, PAD = 30;
+  const bottom = levels[0].length;
+  const width = Math.max(bottom * (NODE_W + GAP_X), 320);
+  const height = levels.length * ROW_H + PAD;
+  stage.style.minWidth = (width + PAD*2) + "px";
+
+  // svg for the connector lines, drawn first so nodes sit on top
+  const svg = document.createElementNS("http://www.w3.org/2000/svg","svg");
+  svg.setAttribute("width", width + PAD*2);
+  svg.setAttribute("height", height);
+  stage.appendChild(svg);
+
+  // position of node j on level L (root is top, leaves bottom)
+  const pos = (L, j) => {
+    const count = levels[L].length;
+    const slot = width / count;
+    const x = PAD + slot*(j + 0.5);
+    const y = PAD + (levels.length - 1 - L) * ROW_H;
+    return {x, y};
+  };
+
+  // lines: connect each parent to its two children
+  for(let L=1; L<levels.length; L++){
+    for(let j=0; j<levels[L].length; j++){
+      const p = pos(L, j);
+      for(const childIdx of [j*2, j*2+1]){
+        if(childIdx < levels[L-1].length){
+          const c = pos(L-1, childIdx);
+          const line = document.createElementNS("http://www.w3.org/2000/svg","line");
+          line.setAttribute("x1", p.x); line.setAttribute("y1", p.y);
+          line.setAttribute("x2", c.x); line.setAttribute("y2", c.y);
+          line.setAttribute("stroke", "#2a2e38");
+          line.setAttribute("stroke-width", "1.5");
+          svg.appendChild(line);
+        }
+      }
+    }
+  }
+
+  // nodes
+  for(let L=0; L<levels.length; L++){
+    for(let j=0; j<levels[L].length; j++){
+      const p = pos(L, j);
+      const isRoot = (L === levels.length-1);
+      const isLeaf = (L === 0);
+      const padded = dupFlags[L] && dupFlags[L][j];
+
+      const el = document.createElement("div");
+      el.className = "node" + (isRoot?" root":"") + (isLeaf?" leaf":"") + (padded?" dup":"");
+      el.style.left = p.x + "px";
+      el.style.top  = p.y + "px";
+      el.dataset.level = L; el.dataset.j = j;
+
+      const tag = isRoot ? "root" : isLeaf ? ("block "+j) : ("h "+L+"·"+j);
+      el.innerHTML = `<span class="tag">${tag}</span><span class="hx">${short(levels[L][j])}</span>`;
+
+      if(isLeaf){
+        el.title = "click for merkle proof";
+        el.addEventListener("click", () => showProof(j));
+      } else {
+        el.title = levels[L][j];
+      }
+      stage.appendChild(el);
+    }
+  }
+
+  // if a leaf was selected, re-apply the proof highlight after redraw
+  if(selected !== null && selected < levels[0].length) showProof(selected, true);
+}
+
+/* --- merkle proof --------------------------------------------------------
+   walk from the leaf up to the root. at each level the node has a sibling;
+   collect it (with whether it sits on the left or right — order matters for
+   hashing). then replay the hashes to confirm we reach the same root. */
+async function showProof(leafIdx, keepScroll){
+  selected = leafIdx;
+  const proofNodes = [];          // [{level, j, side}]
+  let idx = leafIdx;
+
+  for(let L=0; L<levels.length-1; L++){
+    const isRight = idx % 2 === 1;
+    const siblingIdx = isRight ? idx-1 : idx+1;
+    // odd level → sibling is the node itself (the duplicated one)
+    const realSib = siblingIdx < levels[L].length ? siblingIdx : idx;
+    proofNodes.push({ level:L, j:realSib, side: isRight ? "left" : "right" });
+    idx = Math.floor(idx/2);
+  }
+
+  // highlight on the tree
+  const stage = $("stage");
+  stage.classList.add("dimmed");
+  stage.querySelectorAll(".node").forEach(n => {
+    n.classList.remove("on-path","on-proof","sel");
+  });
+  // path from leaf to root
+  let pIdx = leafIdx;
+  for(let L=0; L<levels.length; L++){
+    const node = stage.querySelector(`.node[data-level="${L}"][data-j="${pIdx}"]`);
+    if(node) node.classList.add(L===0 ? "sel" : "on-path");
+    pIdx = Math.floor(pIdx/2);
+  }
+  // sibling proof nodes
+  proofNodes.forEach(pn => {
+    const node = stage.querySelector(`.node[data-level="${pn.level}"][data-j="${pn.j}"]`);
+    if(node) node.classList.add("on-proof");
+  });
+
+  // verify by replaying
+  let running = levels[0][leafIdx];
+  const replay = [];
+  for(const pn of proofNodes){
+    const sibHash = levels[pn.level][pn.j];
+    const combined = pn.side === "left"
+      ? await combine(sibHash, running)
+      : await combine(running, sibHash);
+    replay.push({ sib:sibHash, side:pn.side, result:combined });
+    running = combined;
+  }
+  const root = levels[levels.length-1][0];
+  const ok = running === root;
+
+  // render the readout
+  $("proofIdx").textContent = leafIdx;
+  const stepsBox = $("proofSteps");
+  stepsBox.innerHTML =
+    `<div class="step"><span class="n">leaf hash</span><span class="h">${levels[0][leafIdx]}</span></div>` +
+    replay.map((r,i) =>
+      `<div class="step">
+         <span class="n">step ${i+1} · <span class="side">${r.side}</span></span>
+         <span class="h">+ ${r.sib}<br>= ${r.result}</span>
+       </div>`).join("");
+
+  $("verdict").className = "verdict ok";
+  $("verdict").innerHTML = ok
+    ? `✓ verified — recomputed root matches:<br>${root}`
+    : `recomputed: ${running}`;
+
+  const panel = $("proofPanel");
+  panel.style.display = "block";
+  if(!keepScroll) panel.scrollIntoView({behavior:"smooth", block:"nearest"});
+}
+
+function closeProof(){
+  selected = null;
+  $("proofPanel").style.display = "none";
+  const stage = $("stage");
+  stage.classList.remove("dimmed");
+  stage.querySelectorAll(".node").forEach(n => n.classList.remove("on-path","on-proof","sel"));
+}
+
+/* --- controls ------------------------------------------------------------- */
+$("add").addEventListener("click", () => {
+  blocks.push("tx-" + blocks.length);
+  selected = null; closeProof();
+  build();
+});
+$("rand").addEventListener("click", () => {
+  const names = ["alice","bob","carol","dave","erin","frank","grace","heidi"];
+  const pick = () => names[Math.floor(Math.random()*names.length)];
+  const n = 3 + Math.floor(Math.random()*4);
+  blocks = Array.from({length:n}, () =>
+    `${pick()}→${pick()}: ${1+Math.floor(Math.random()*99)}`);
+  selected = null; closeProof();
+  build();
+});
+$("proofClose").addEventListener("click", closeProof);
+
+/* --- go ------------------------------------------------------------------- */
+build();
+</script>
+</body>
+</html>
